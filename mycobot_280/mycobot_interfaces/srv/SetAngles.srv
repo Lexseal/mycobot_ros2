@@ -1,9 +1,4 @@
-float32 joint_1
-float32 joint_2
-float32 joint_3
-float32 joint_4
-float32 joint_5
-float32 joint_6
-int8 speed
+float32[6] angles  # [joint1, joint2, joint3, joint4, joint5, joint6]
+uint8 speed 25  # [0, 100]
 ---
 bool flag

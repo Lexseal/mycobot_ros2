@@ -35,6 +35,10 @@ set(srv_files
   "srv/SetAngles.srv"
   "srv/GetCoords.srv"
   "srv/SetCoords.srv"
+  "srv/GetGripper.srv"
+  "srv/SetGripper.srv"
+  "srv/OpenGripper.srv"
+  "srv/CloseGripper.srv"
   "srv/GripperStatus.srv"
   "srv/PumpStatus.srv"
 )

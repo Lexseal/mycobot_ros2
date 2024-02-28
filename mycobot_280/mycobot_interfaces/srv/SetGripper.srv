@@ -1,0 +1,4 @@
+float32 value  # [-0.7, 0.15]
+uint8 speed 25  # [0, 100]
+---
+bool flag
