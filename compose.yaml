@@ -1,0 +1,32 @@
+x-app: &common
+  command:
+    - >-
+      colcon build --symlink-install
+      && source /ros2_ws/install/setup.bash
+      && ros2 launch ${LAUNCH_TARGET:-mycobot_description mycobot_280pi_rviz_display.launch.py}
+  privileged: true
+  environment:
+    PYTHONUNBUFFERED: 1
+    QT_X11_NO_MITSHM: 1
+    DISPLAY: $DISPLAY
+  volumes:
+    - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
+    - ".:/ros2_ws/src/mycobot_ros2"
+  build:
+    context: .
+    args:
+      ROS_DISTRO: "humble"
+      PYMYCOBOT_VERSION: ">=2<3"
+      BASE_IMAGE: nvidia/opengl:1.2-glvnd-runtime-ubuntu22.04
+      WORKDIR: "/ros2_ws"
+
+services:
+  # ros:
+  #   <<: *common
+  #   build:
+  #     args:
+  #       BASE_IMAGE: ubuntu:22.04
+
+  nvidia-ros:
+    <<: *common
+    runtime: nvidia
