@@ -18,6 +18,7 @@ setup(
         # (os.path.join('lib',package_name),glob(package_name+'/*.py')),
         # 配置文件
         (os.path.join("share", package_name, "config"), glob("config/*")),
+        (os.path.join("share", package_name, "rviz"), glob("rviz/*")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
