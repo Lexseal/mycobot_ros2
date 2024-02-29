@@ -216,7 +216,7 @@ class Driver(Node):
         joint_angles = self.mc.get_radians()
         while (gripper_value := self.mc.get_gripper_value()) == -1:  # [0, 100]
             time.sleep(0.1)
-            self.logger.warning("Got -1 gripper value, attempting again...")
+            self.logger.debug("Got -1 gripper value, attempting again...")
 
         # Convert gripper value to gripper q value
         gripper_q_val = (gripper_value - gripper_value_low) / (  # type: ignore
