@@ -1,3 +1,5 @@
+"""MyCobot driver node. Tested with pymycobot==3.3.0"""
+
 from __future__ import annotations
 
 import time
@@ -147,7 +149,7 @@ class Driver(Node):
         publish_frequency = self.declare_parameter("publish_frequency", 30)
         self.declare_parameter("gripper_value_limits", [0, 100], ignore_override=True)
 
-        self.mc = MyCobot(port.value, baudrate.value)
+        self.mc = MyCobot(port.value, baudrate.value, debug=False, thread_lock=True)  # type: ignore
         time.sleep(0.05)
         self.mc.set_free_mode(1)
         time.sleep(0.05)
@@ -155,7 +157,7 @@ class Driver(Node):
         # Initialize qpos and calibrate gripper
         self.sync_send_radians(init_qpos.value, 50)  # type: ignore
         self.gripper_q_limits = (-0.7, 0.15)  # (low, high)
-        self.gripper_value_limits = (0, 100)  # (low, high)
+        self.gripper_value_limits: tuple[int, int] = (0, 100)  # (low, high)
         self.calibrate_gripper()
         self.set_parameters([
             Parameter(
@@ -217,7 +219,7 @@ class Driver(Node):
             self.logger.warning("Got -1 gripper value, attempting again...")
 
         # Convert gripper value to gripper q value
-        gripper_q_val = (gripper_value - gripper_value_low) / (
+        gripper_q_val = (gripper_value - gripper_value_low) / (  # type: ignore
             gripper_value_high - gripper_value_low
         ) * (gripper_q_high - gripper_q_low) + gripper_q_low
         gripper_q_val = np.clip(gripper_q_val, gripper_q_low, gripper_q_high)
@@ -250,19 +252,31 @@ class Driver(Node):
         """Calibrate MyCobot Adaptive Gripper for conversion parameters"""
         self.logger.info("Calibrating Gripper...")
 
-        self.mc.set_gripper_state(1, 100)  # close gripper
-        time.sleep(3)
-        while (value_min := self.mc.get_gripper_value()) == -1:
-            time.sleep(0.1)
-            self.logger.warning("Got -1 gripper value, attempting again...")
+        while True:
+            self.mc.set_gripper_state(1, 100)  # close gripper
+            time.sleep(3)
+            while (value_min := self.mc.get_gripper_value()) == -1:
+                time.sleep(0.1)
+                self.logger.warning("Got -1 gripper value, attempting again...")
+            if value_min < 50:  # type: ignore
+                break
+            self.logger.warning(
+                f"Got gripper value={value_min} >= 50 when closed, attempting again..."  # noqa: G004
+            )
 
-        self.mc.set_gripper_state(0, 100)  # open gripper
-        time.sleep(3)
-        while (value_max := self.mc.get_gripper_value()) == -1:
-            time.sleep(0.1)
-            self.logger.warning("Got -1 gripper value, attempting again...")
+        while True:
+            self.mc.set_gripper_state(0, 100)  # open gripper
+            time.sleep(3)
+            while (value_max := self.mc.get_gripper_value()) == -1:
+                time.sleep(0.1)
+                self.logger.warning("Got -1 gripper value, attempting again...")
+            if value_max > 50:  # type: ignore
+                break
+            self.logger.warning(
+                f"Got gripper value={value_max} <= 50 when opened, attempting again..."  # noqa: G004
+            )
 
-        self.gripper_value_limits = (value_min, value_max)
+        self.gripper_value_limits = (value_min, value_max)  # type: ignore
         self.logger.info(f"Gripper calibrated! (low, high)={self.gripper_value_limits}")  # noqa: G004
 
     def set_angles_callback(
