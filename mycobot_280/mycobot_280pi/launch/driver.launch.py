@@ -1,13 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import (
-    Command,
-    FindExecutable,
-    LaunchConfiguration,
-    PathJoinSubstitution,
-)
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
 from pymycobot import PI_BAUD, PI_PORT
 
 
@@ -34,24 +28,6 @@ def generate_launch_description():
             "publish_frequency", default_value="30", description="Publishing frequency"
         )
     )
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            name="urdf_model",
-            default_value=PathJoinSubstitution([
-                FindPackageShare("mycobot_description"),
-                "urdf/mycobot/mycobot_with_gripper_parallel.urdf",
-            ]),
-        )
-    )
-
-    robot_description = {
-        "robot_description": Command([
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            LaunchConfiguration("urdf_model"),
-        ])
-    }
-
     # joint_state_publisher_node = Node(
     #     package="mycobot_280pi",
     #     executable="joint_state_publisher",
@@ -63,12 +39,6 @@ def generate_launch_description():
     #         }
     #     ],
     # )
-
-    robot_state_publisher_node = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        parameters=[robot_description],
-    )
 
     driver_node = Node(
         package="mycobot_280pi",
@@ -83,6 +53,4 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription(
-        declared_arguments + [robot_state_publisher_node, driver_node]
-    )
+    return LaunchDescription(declared_arguments + [driver_node])
