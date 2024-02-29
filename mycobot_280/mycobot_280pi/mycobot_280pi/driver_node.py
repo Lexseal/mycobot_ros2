@@ -212,7 +212,9 @@ class Driver(Node):
 
         # Get real angles from server
         joint_angles = self.mc.get_radians()
-        gripper_value = self.mc.get_gripper_value()  # [0, 100]
+        while (gripper_value := self.mc.get_gripper_value()) == -1:  # [0, 100]
+            time.sleep(0.1)
+            self.logger.warning("Got -1 gripper value, attempting again...")
 
         # Convert gripper value to gripper q value
         gripper_q_val = (gripper_value - gripper_value_low) / (
