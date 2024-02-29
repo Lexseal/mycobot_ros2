@@ -40,9 +40,51 @@ class JointStatePublisher(Node):
         self.joint_pub = self.create_publisher(
             JointState, "joint_states", qos_profile=10
         )
-        rate = self.create_rate(30)  # 30hz
+        self.timer = self.create_timer(1 / 30, self.timer_callback)
+
+        # rate = self.create_rate(30)  # 30hz
 
         # Create joint state
+        # joint_state = JointState()
+        # joint_state.header = Header()
+        # joint_state.name = [
+        #     "joint1",
+        #     "joint2",
+        #     "joint3",
+        #     "joint4",
+        #     "joint5",
+        #     "joint6",
+        #     "gripper_controller",
+        # ]
+        # joint_state.velocity = [0.0] * 7
+        # joint_state.effort = [0.0] * 7
+        #
+        # gripper_q_low, gripper_q_high = self.gripper_q_limits
+        # gripper_value_low, gripper_value_high = self.gripper_value_limits
+        #
+        # while rclpy.ok():
+        #     rclpy.spin_once(self)
+        #
+        #     # Get real angles from server
+        #     joint_angles = self.mc.get_radians()
+        #     gripper_value = self.mc.get_gripper_value()  # [0, 100]
+        #
+        #     # Convert gripper value to gripper q value
+        #     gripper_q_val = (gripper_value - gripper_value_low) / (
+        #         gripper_value_high - gripper_value_low
+        #     ) * (gripper_q_high - gripper_q_low) + gripper_q_low
+        #     gripper_q_val = np.clip(gripper_q_val, gripper_q_low, gripper_q_high)
+        #
+        #     state = joint_angles + [gripper_q_val]
+        #     self.logger.debug(f"Joint states: {state}")  # noqa: G004
+        #
+        #     joint_state.header.stamp = self.get_clock().now().to_msg()
+        #     joint_state.position = state
+        #     self.joint_pub.publish(joint_state)
+        #
+        #     rate.sleep()
+
+    def timer_callback(self):
         joint_state = JointState()
         joint_state.header = Header()
         joint_state.name = [
@@ -60,27 +102,22 @@ class JointStatePublisher(Node):
         gripper_q_low, gripper_q_high = self.gripper_q_limits
         gripper_value_low, gripper_value_high = self.gripper_value_limits
 
-        while rclpy.ok():
-            rclpy.spin_once(self)
+        # Get real angles from server
+        joint_angles = self.mc.get_radians()
+        gripper_value = self.mc.get_gripper_value()  # [0, 100]
 
-            # Get real angles from server
-            joint_angles = self.mc.get_radians()
-            gripper_value = self.mc.get_gripper_value()  # [0, 100]
+        # Convert gripper value to gripper q value
+        gripper_q_val = (gripper_value - gripper_value_low) / (
+            gripper_value_high - gripper_value_low
+        ) * (gripper_q_high - gripper_q_low) + gripper_q_low
+        gripper_q_val = np.clip(gripper_q_val, gripper_q_low, gripper_q_high)
 
-            # Convert gripper value to gripper q value
-            gripper_q_val = (gripper_value - gripper_value_low) / (
-                gripper_value_high - gripper_value_low
-            ) * (gripper_q_high - gripper_q_low) + gripper_q_low
-            gripper_q_val = np.clip(gripper_q_val, gripper_q_low, gripper_q_high)
+        state = joint_angles + [gripper_q_val]
+        self.logger.debug(f"Joint states: {state}")  # noqa: G004
 
-            state = joint_angles + [gripper_q_val]
-            self.logger.debug(f"Joint states: {state}")  # noqa: G004
-
-            joint_state.header.stamp = self.get_clock().now().to_msg()
-            joint_state.position = state
-            self.joint_pub.publish(joint_state)
-
-            rate.sleep()
+        joint_state.header.stamp = self.get_clock().now().to_msg()
+        joint_state.position = state
+        self.joint_pub.publish(joint_state)
 
     def sync_send_radians(self, angles: list[float], speed: int, timeout=15):
         """
