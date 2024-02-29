@@ -31,6 +31,11 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
+            "publish_frequency", default_value="30", description="Publishing frequency"
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
             name="urdf_model",
             default_value=PathJoinSubstitution([
                 FindPackageShare("mycobot_description"),
@@ -47,17 +52,17 @@ def generate_launch_description():
         ])
     }
 
-    joint_state_publisher_node = Node(
-        package="mycobot_280pi",
-        executable="joint_state_publisher",
-        parameters=[
-            {
-                "port": LaunchConfiguration("port"),
-                "baudrate": LaunchConfiguration("baudrate"),
-                "init_qpos": LaunchConfiguration("init_qpos"),
-            }
-        ],
-    )
+    # joint_state_publisher_node = Node(
+    #     package="mycobot_280pi",
+    #     executable="joint_state_publisher",
+    #     parameters=[
+    #         {
+    #             "port": LaunchConfiguration("port"),
+    #             "baudrate": LaunchConfiguration("baudrate"),
+    #             "init_qpos": LaunchConfiguration("init_qpos"),
+    #         }
+    #     ],
+    # )
 
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
@@ -72,11 +77,12 @@ def generate_launch_description():
             {
                 "port": LaunchConfiguration("port"),
                 "baudrate": LaunchConfiguration("baudrate"),
+                "init_qpos": LaunchConfiguration("init_qpos"),
+                "publish_frequency": LaunchConfiguration("publish_frequency"),
             }
         ],
     )
 
     return LaunchDescription(
-        declared_arguments
-        + [joint_state_publisher_node, robot_state_publisher_node, driver_node]
+        declared_arguments + [robot_state_publisher_node, driver_node]
     )

@@ -14,12 +14,14 @@ from mycobot_interfaces.srv import (
 from pymycobot import PI_BAUD, PI_PORT
 from pymycobot.mycobot import MyCobot
 from rcl_interfaces.srv import GetParameters
+from rclpy import Parameter
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.node import Node as ROSNode
 from rclpy.parameter import ParameterValue
 from rclpy.signals import SignalHandlerGuardCondition
 from rclpy.utilities import timeout_sec_to_nsec
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Header
 
 
 def wait_for_message(msg_type, node: ROSNode, topic: str, time_to_wait=-1):
@@ -139,35 +141,53 @@ class Driver(Node):
         super().__init__("mycobot_driver")
         self.logger = self.get_logger()
 
-        node_fullname = self.get_fully_qualified_name()
-        node_ns = node_fullname.rsplit("/", maxsplit=1)[0]
-
-        joint_state_publisher_name = self.declare_parameter(
-            "joint_state_publisher_name", "joint_state_publisher"
-        )
-        joint_state_publisher_fullname = f"{node_ns}/{joint_state_publisher_name.value}"
-        ret = self.wait_for_node(joint_state_publisher_fullname, timeout=60)
-        assert ret, f"No node '{joint_state_publisher_fullname}' within 60 seconds!"
-
-        # Wait for robot initialization and a joint_states message
-        ret, msg = wait_for_message(
-            JointState, self, f"{node_ns}/joint_states", time_to_wait=60
-        )
-        assert ret and msg is not None, "No joint_states message within 60 seconds"
-
-        # Get gripper_value_limits parameter from joint_state_publisher
-        self.gripper_value_limits = self.get_remote_parameters(
-            joint_state_publisher_fullname, "gripper_value_limits"
-        ).integer_array_value.tolist()  # (low, high)  # type: ignore
-        self.logger.info(
-            "Received calibrated gripper limits: "  # noqa: G004
-            f"(low, high)={self.gripper_value_limits}"
-        )
-        self.gripper_q_limits = (-0.7, 0.15)  # (low, high)
-
         port = self.declare_parameter("port", PI_PORT)
         baudrate = self.declare_parameter("baudrate", PI_BAUD)
+        init_qpos = self.declare_parameter("init_qpos", [0.0] * 5 + [0.785398])
+        publish_frequency = self.declare_parameter("publish_frequency", 30)
+        self.declare_parameter("gripper_value_limits", [0, 100], ignore_override=True)
 
+        self.mc = MyCobot(port.value, baudrate.value)
+        time.sleep(0.05)
+        self.mc.set_free_mode(1)
+        time.sleep(0.05)
+
+        # Initialize qpos and calibrate gripper
+        self.sync_send_radians(init_qpos.value, 50)  # type: ignore
+        self.gripper_q_limits = (-0.7, 0.15)  # (low, high)
+        self.gripper_value_limits = (0, 100)  # (low, high)
+        self.calibrate_gripper()
+        self.set_parameters([
+            Parameter(
+                "gripper_value_limits",
+                Parameter.Type.INTEGER_ARRAY,
+                list(self.gripper_value_limits),
+            )
+        ])
+
+        # Publishing joint states
+        self.joint_pub = self.create_publisher(
+            JointState, "joint_states", qos_profile=10
+        )
+        self.timer = self.create_timer(
+            1 / publish_frequency.value,  # type: ignore
+            self.publish_joint_states_callback,
+        )
+        self.joint_state_msg = JointState()
+        self.joint_state_msg.header = Header()
+        self.joint_state_msg.name = [
+            "joint1",
+            "joint2",
+            "joint3",
+            "joint4",
+            "joint5",
+            "joint6",
+            "gripper_controller",
+        ]
+        self.joint_state_msg.velocity = [0.0] * 7
+        self.joint_state_msg.effort = [0.0] * 7
+
+        # Services for controlling the robot
         self.srv_set_angles = self.create_service(
             SetAngles, "set_angles", self.set_angles_callback
         )
@@ -184,12 +204,64 @@ class Driver(Node):
             CloseGripper, "close_gripper", self.close_gripper_callback
         )
 
-        self.mc = MyCobot(port.value, baudrate.value)
-        time.sleep(0.05)
-        self.mc.set_free_mode(1)
-        time.sleep(0.05)
-
         self.logger.info("MyCobot_280pi driver is ready.")
+
+    def publish_joint_states_callback(self):
+        gripper_q_low, gripper_q_high = self.gripper_q_limits
+        gripper_value_low, gripper_value_high = self.gripper_value_limits
+
+        # Get real angles from server
+        joint_angles = self.mc.get_radians()
+        gripper_value = self.mc.get_gripper_value()  # [0, 100]
+
+        # Convert gripper value to gripper q value
+        gripper_q_val = (gripper_value - gripper_value_low) / (
+            gripper_value_high - gripper_value_low
+        ) * (gripper_q_high - gripper_q_low) + gripper_q_low
+        gripper_q_val = np.clip(gripper_q_val, gripper_q_low, gripper_q_high)
+
+        state = joint_angles + [gripper_q_val]
+        self.logger.debug(f"Joint states: {state}")  # noqa: G004
+
+        self.joint_state_msg.header.stamp = self.get_clock().now().to_msg()
+        self.joint_state_msg.position = state
+        self.joint_pub.publish(self.joint_state_msg)
+
+    def sync_send_radians(self, angles: list[float], speed: int, timeout=15):
+        """
+        Send the angle in synchronous state and return when the target point is reached
+
+        Args:
+            angles: a list of angle values in radians, length 6.
+            speed: (int) 0 ~ 100
+            timeout: default 15s.
+        """
+        degrees = np.asarray(angles) / np.pi * 180
+        start_t = time.time()
+        self.mc.send_radians(angles, speed)
+        while time.time() - start_t < timeout:
+            if self.mc.is_in_position(degrees, 0) == 1:
+                break
+            time.sleep(0.1)
+
+    def calibrate_gripper(self):
+        """Calibrate MyCobot Adaptive Gripper for conversion parameters"""
+        self.logger.info("Calibrating Gripper...")
+
+        self.mc.set_gripper_state(1, 100)  # close gripper
+        time.sleep(3)
+        while (value_min := self.mc.get_gripper_value()) == -1:
+            time.sleep(0.1)
+            self.logger.warning("Got -1 gripper value, attempting again...")
+
+        self.mc.set_gripper_state(0, 100)  # open gripper
+        time.sleep(3)
+        while (value_max := self.mc.get_gripper_value()) == -1:
+            time.sleep(0.1)
+            self.logger.warning("Got -1 gripper value, attempting again...")
+
+        self.gripper_value_limits = (value_min, value_max)
+        self.logger.info(f"Gripper calibrated! (low, high)={self.gripper_value_limits}")  # noqa: G004
 
     def set_angles_callback(
         self, request: SetAngles.Request, response: SetAngles.Response
@@ -201,7 +273,9 @@ class Driver(Node):
         :param response: SetAngles.Response
             flag: bool, success or failure
         """
-        self.logger.info(f"Received angles={request.angles} speed={request.speed}")  # noqa: G004
+        self.logger.info(
+            f"Received SetAngles angles={request.angles} speed={request.speed}"  # noqa: G004
+        )
 
         self.mc.send_radians(request.angles, request.speed)
 
@@ -221,7 +295,7 @@ class Driver(Node):
             flag: bool, success or failure
         """
         self.logger.info(
-            f"Received angles={request.pose} speed={request.speed} "  # noqa: G004
+            f"Received SetCoords pose={request.pose} speed={request.speed} "  # noqa: G004
             f"mode={request.mode}"
         )
 
@@ -240,7 +314,9 @@ class Driver(Node):
         :param response: SetGripper.Response
             flag: bool, success or failure
         """
-        self.logger.info(f"Received value={request.value} speed={request.speed}")  # noqa: G004
+        self.logger.info(
+            f"Received SetGripper value={request.value} speed={request.speed}"  # noqa: G004
+        )
 
         gripper_q_low, gripper_q_high = self.gripper_q_limits
         gripper_value_low, gripper_value_high = self.gripper_value_limits
@@ -265,7 +341,7 @@ class Driver(Node):
         :param response: OpenGripper.Response
             flag: bool, success or failure
         """
-        self.logger.info(f"Received speed={request.speed}")  # noqa: G004
+        self.logger.info(f"Received OpenGripper speed={request.speed}")  # noqa: G004
 
         self.mc.set_gripper_state(0, request.speed)
 
@@ -281,7 +357,7 @@ class Driver(Node):
         :param response: CloseGripper.Response
             flag: bool, success or failure
         """
-        self.logger.info(f"Received speed={request.speed}")  # noqa: G004
+        self.logger.info(f"Received CloseGripper speed={request.speed}")  # noqa: G004
 
         self.mc.set_gripper_state(1, request.speed)
 
