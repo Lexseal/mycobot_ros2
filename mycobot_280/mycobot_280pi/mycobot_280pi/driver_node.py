@@ -6,6 +6,7 @@ import time
 
 import numpy as np
 import rclpy
+from rclpy.action import ActionServer
 from mycobot_interfaces.srv import (
     CloseGripper,
     OpenGripper,
@@ -13,6 +14,7 @@ from mycobot_interfaces.srv import (
     SetCoords,
     SetGripper,
 )
+from mycobot_interfaces.action import Trajectory
 from pymycobot import PI_BAUD, PI_PORT
 from pymycobot.mycobot import MyCobot
 from rcl_interfaces.srv import GetParameters
@@ -206,7 +208,24 @@ class Driver(Node):
             CloseGripper, "close_gripper", self.close_gripper_callback
         )
 
+        self.action_server_trajectory = ActionServer(
+            self,
+            Trajectory,
+            'exec_trajectory',
+            self.execute_trajectory,
+        )
+
         self.logger.info("MyCobot_280pi driver is ready.")
+
+    def execute_trajectory(self, goal_handle):
+        """Execute a trajectory action."""
+        path = goal_handle.request.path
+        speeds = goal_handle.request.speed
+        self.logger.info(f"Received trajectory action request of length {len(path)}.")
+        for qpos, speed in zip(path, speeds):
+            self.sync_send_radians(qpos, speed)
+            goal_handle.publish_feedback(Trajectory.Feedback())
+        goal_handle.succeed()
 
     def publish_joint_states_callback(self):
         gripper_q_low, gripper_q_high = self.gripper_q_limits

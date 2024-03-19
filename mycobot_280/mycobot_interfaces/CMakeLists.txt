@@ -28,6 +28,8 @@ set(msg_files
   "msg/MycobotSetCoords.msg"
   "msg/MycobotGripperStatus.msg"
   "msg/MycobotPumpStatus.msg"
+  "msg/Qpos.msg"
+  "msg/Qvel.msg"
 )
 
 set(srv_files
@@ -43,10 +45,15 @@ set(srv_files
   "srv/PumpStatus.srv"
 )
 
+set(action_files
+  "action/Trajectory.action"
+)
+
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${msg_files}
   ${srv_files}
-  DEPENDENCIES std_msgs
+  ${action_files}
+  DEPENDENCIES std_msgs builtin_interfaces
 )
 
 ament_export_dependencies(rosidl_default_runtime)
