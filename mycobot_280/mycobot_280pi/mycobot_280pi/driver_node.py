@@ -252,6 +252,9 @@ class Driver(Node):
         """Calibrate MyCobot Adaptive Gripper for conversion parameters"""
         self.logger.info("Calibrating Gripper...")
 
+        # skip for now because the gripper got disconnected
+        return
+
         while True:
             self.mc.set_gripper_state(1, 100)  # close gripper
             time.sleep(3)
